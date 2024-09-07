@@ -1,0 +1,1 @@
+docker build . --tag googlefan25/lm-python
