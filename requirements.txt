@@ -1,6 +1,5 @@
 duckduckgo_search
 transformers
 openai
-datasets
 trafilatura
 playwright

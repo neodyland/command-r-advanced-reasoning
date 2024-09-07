@@ -14,7 +14,7 @@ def now():
     return datetime.datetime.now(JST).strftime("%Y/%m/%d")
 
 
-async def chat(history: list, q: str):
+async def __chat(history: list, q: str):
     prompt = (
         tok.apply_chat_template(
             history,
@@ -63,7 +63,7 @@ Today's Date: {now()}
     ]
 
 
-async def main(input_fn, print_fn):
+async def chat(input_fn, print_fn):
     h = create_history()
     current_question = None
     accessed = []
@@ -89,12 +89,18 @@ async def main(input_fn, print_fn):
             h.append({"role": "user", "content": f"Python result: {res}"})
         elif last.startswith("%output: ") or len(h) == 1:
             accessed = []
-            i = await input_fn()
-            if i == "clear":
-                h = create_history()
-                continue
-            current_question = i
-            h.append({"role": "user", "content": i})
+            if isinstance(input_fn, str):
+                if len(h) == 1:
+                    h.append({"role": "user", "content": input_fn})
+                else:
+                    return h
+            else:
+                i = await input_fn()
+                if i == "clear":
+                    h = create_history()
+                    continue
+                current_question = i
+                h.append({"role": "user", "content": i})
         else:
             h.append(
                 {
@@ -102,7 +108,7 @@ async def main(input_fn, print_fn):
                     "content": "Continue your answering with advanced careful reasoning and previous answer source/correct checking.",
                 }
             )
-        async for x in chat(h, current_question):
+        async for x in __chat(h, current_question):
             if "part" in x:
                 await print_fn(x["part"])
             if "all" in x:
@@ -119,4 +125,4 @@ if __name__ == "__main__":
     async def print_fn(content):
         print(content, end="", flush=True)
 
-    asyncio.run(main(input_fn, print_fn))
+    asyncio.run(chat(input_fn, print_fn))
