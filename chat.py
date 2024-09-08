@@ -67,16 +67,17 @@ Today's Date: {now()}
     ]
 
 
-async def chat(input_fn, print_fn, max_search=10):
+async def chat(input_fn, print_fn, max_search=10, max_python=10):
     h = create_history()
     current_question = None
     accessed = []
     searched = 0
+    python_count = 0
     plan = None
     while True:
         last = h[-1]["content"]
         if last.startswith("%search: "):
-            if searched > 9:
+            if searched > max_search - 1:
                 await print_fn(f"Search result: You are searching too much.\n")
                 h.append(
                     {
@@ -85,7 +86,7 @@ async def chat(input_fn, print_fn, max_search=10):
                     }
                 )
             else:
-                searched = +1
+                searched += 1
                 res = await search(last[len("%search: ") :])
                 await print_fn(f"Search result: {res}\n")
                 h.append({"role": "user", "content": f"Search result: {res}"})
@@ -99,13 +100,24 @@ async def chat(input_fn, print_fn, max_search=10):
                     await print_fn(x["part"])
             accessed.append(last[len("%access: ") :])
         elif last.startswith("%python: "):
-            await print_fn("Python result: ")
-            res = await python(last[len("%python: ") :])
-            await print_fn(f"{res}\n")
-            h.append({"role": "user", "content": f"Python result: {res}"})
+            if python_count > max_python - 1:
+                await print_fn(f"Python result: You are using python too much.\n")
+                h.append(
+                    {
+                        "role": "user",
+                        "content": f"Python result: You are using python too much.",
+                    }
+                )
+            else:
+                python_count += 1
+                await print_fn("Python result: ")
+                res = await python(last[len("%python: ") :])
+                await print_fn(f"{res}\n")
+                h.append({"role": "user", "content": f"Python result: {res}"})
         elif last.startswith("%output: ") or len(h) == 1:
             accessed = []
             searched = 0
+            python_count = 0
             if isinstance(input_fn, str):
                 if len(h) == 1:
                     h.append({"role": "user", "content": input_fn})
@@ -123,8 +135,8 @@ async def chat(input_fn, print_fn, max_search=10):
                 plan = last[len("%plan: ") :]
             h.append(
                 {
-                    "role": "user",
-                    "content": "Continue your answering with advanced reasoning.",
+                    "role": "system",
+                    "content": "think or wait or search or access or plan or output.",
                 }
             )
         async for x in __chat(h, current_question, plan):
