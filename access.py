@@ -1,16 +1,11 @@
-from transformers import AutoTokenizer
-from openai_api import openai_api
+from openai_api import openai_api, tok
 from playwright.async_api import async_playwright
 from trafilatura import extract
-
-tok = AutoTokenizer.from_pretrained("CohereForAI/c4ai-command-r-08-2024")
 
 
 async def access(url: str, q: str, previous_accessed: list):
     if "\n" in url:
-        yield {"part": "You provided multiple urls. Try one from it."}
-        yield {"all": "You provided multiple urls. Try one from it."}
-        return
+        url = url.split("\n")[0]
     if url in previous_accessed:
         yield {
             "part": "You have accessed this url previously. Try another url. You got no information from this url this time."
@@ -63,17 +58,10 @@ Question: {q}""",
 
 
 async def __extract_ai(content: str, system: str):
-    prompt = (
-        (
-            tok.apply_chat_template(
-                [
-                    {"role": "user", "content": content},
-                ],
-                tokenize=False,
-                add_generation_prompt=False,
-            )[len(tok.bos_token) :]
-        )
-        + f"""<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>{system}<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>"""
+    prompt = tok.apply_chat_template(
+        [{"role": "user", "content": content}, {"role": "system", "content": system}],
+        tokenize=False,
+        add_generation_prompt=False,
     )
     async for x in openai_api(prompt):
         yield x

@@ -1,40 +1,44 @@
-from openai_api import openai_api
+from openai_api import openai_api, tok
 import datetime
 from search import search
 from access import access
-from transformers import AutoTokenizer
 from python import python
+import copy
 
 t_delta = datetime.timedelta(hours=9)
 JST = datetime.timezone(t_delta, "JST")
-tok = AutoTokenizer.from_pretrained("CohereForAI/c4ai-command-r-08-2024")
 
 
 def now():
     return datetime.datetime.now(JST).strftime("%Y/%m/%d")
 
 
-async def __chat(history: list, q: str):
-    prompt = (
-        tok.apply_chat_template(
-            history,
-            tokenize=False,
-            add_generation_prompt=False,
-        )[len(tok.bos_token) :]
-        + f"""<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>
-To solve user's query, you should choose from one of the following action:
+async def __chat(history: list, q: str, plan: str):
+    history = copy.deepcopy(history)
+    history.append(
+        {
+            "role": "system",
+            "content": f"""To solve user's query, you should choose from one of the following action:
 - "%plan: <short planning>" Plan for answering.
 - "%python: <math code>" Run python code for math problems.
 - "%search: <query>" Search for the content with the query. Returns list of urls related.
-- "%access: <single url>" Access to a single url(DONT privode multiple url) and extract markdown from it. Returns the content.
+- "%access: <single url>" Access to a single url and extract markdown from it. Returns the content.
 - "%think: <short thought>" Think for the content for advanced reasoning. This is your internal thinking, not the final output.
 - "%wait: <short thought>" Think deeply to wait a moment to verify or correct your answer. Commonly used after %think.
 - "%output: <ultra detailed markdown response>" Final ultra detailed, well formatted markdown response to user with evidence/source to every information.
 You could only do one action per response.
 Always provide evidence when you %think or %output.
+Don't output unnecessary words.
 If you followed the instruction correctly, you will be tipped $10.
 
-Remember, the current quetion is: {q}<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>"""
+{f'Your current plan is: {plan}' if plan else ''}
+Remember, the current quetion is: {q}""",
+        }
+    )
+    prompt = tok.apply_chat_template(
+        history,
+        tokenize=False,
+        add_generation_prompt=True,
     )
     async for x in openai_api(
         prompt,
@@ -63,22 +67,34 @@ Today's Date: {now()}
     ]
 
 
-async def chat(input_fn, print_fn):
+async def chat(input_fn, print_fn, max_search=10):
     h = create_history()
     current_question = None
     accessed = []
+    searched = 0
+    plan = None
     while True:
         last = h[-1]["content"]
         if last.startswith("%search: "):
-            res = await search(last[len("%search: ") :])
-            await print_fn(f"Search result: {res}\n")
-            h.append({"role": "user", "content": f"Search result: {res}"})
+            if searched > 9:
+                await print_fn(f"Search result: You are searching too much.\n")
+                h.append(
+                    {
+                        "role": "user",
+                        "content": f"Search result: You are searching too much.",
+                    }
+                )
+            else:
+                searched = +1
+                res = await search(last[len("%search: ") :])
+                await print_fn(f"Search result: {res}\n")
+                h.append({"role": "user", "content": f"Search result: {res}"})
         elif last.startswith("%access: "):
             await print_fn("Access result: ")
             async for x in access(last[len("%access: ") :], current_question, accessed):
                 if "all" in x:
                     await print_fn("\n")
-                    h.append({"role": "user", "content": f"Access result: {res}"})
+                    h.append({"role": "user", "content": f"Access result: {x['all']}"})
                 elif "part" in x:
                     await print_fn(x["part"])
             accessed.append(last[len("%access: ") :])
@@ -89,6 +105,7 @@ async def chat(input_fn, print_fn):
             h.append({"role": "user", "content": f"Python result: {res}"})
         elif last.startswith("%output: ") or len(h) == 1:
             accessed = []
+            searched = 0
             if isinstance(input_fn, str):
                 if len(h) == 1:
                     h.append({"role": "user", "content": input_fn})
@@ -102,13 +119,15 @@ async def chat(input_fn, print_fn):
                 current_question = i
                 h.append({"role": "user", "content": i})
         else:
+            if last.startswith("%plan"):
+                plan = last[len("%plan: ") :]
             h.append(
                 {
                     "role": "user",
                     "content": "Continue your answering with advanced reasoning.",
                 }
             )
-        async for x in __chat(h, current_question):
+        async for x in __chat(h, current_question, plan):
             if "part" in x:
                 await print_fn(x["part"])
             if "all" in x:
