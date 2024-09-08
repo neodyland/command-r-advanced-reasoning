@@ -105,7 +105,7 @@ async def chat(input_fn, print_fn):
             h.append(
                 {
                     "role": "user",
-                    "content": "Continue your answering with advanced careful reasoning and previous answer source/correct checking.",
+                    "content": "Continue your answering with advanced reasoning.",
                 }
             )
         async for x in __chat(h, current_question):
